@@ -3,6 +3,7 @@ package gorequest
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -86,6 +87,7 @@ type SuperAgent struct {
 	Retryable            superAgentRetryable
 	DoNotClearSuperAgent bool
 	isClone              bool
+	Context              context.Context
 }
 
 var DisableTransportSwap = false
@@ -118,6 +120,7 @@ func New() *SuperAgent {
 		CurlCommand:       false,
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
 		isClone:           false,
+		Context:           nil,
 	}
 	// disable keep alives by default, see this issue https://github.com/parnurzeal/gorequest/issues/75
 	s.Transport.DisableKeepAlives = true
@@ -229,6 +232,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		Retryable:            copyRetryable(s.Retryable),
 		DoNotClearSuperAgent: true,
 		isClone:              true,
+		Context:              s.Context,
 	}
 	return clone
 }
@@ -828,6 +832,12 @@ func (s *SuperAgent) SendString(content string) *SuperAgent {
 	return s
 }
 
+// Set request context (can be used to cancel request).
+func (s *SuperAgent) SetContext(ctx context.Context) *SuperAgent {
+	s.Context = ctx
+	return s
+}
+
 type File struct {
 	Filename  string
 	Fieldname string
@@ -1373,8 +1383,14 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 		return nil, errors.New("TargetType '" + s.TargetType + "' could not be determined")
 	}
 
-	if req, err = http.NewRequest(s.Method, s.Url, contentReader); err != nil {
-		return nil, err
+	if s.Context == nil {
+		if req, err = http.NewRequest(s.Method, s.Url, contentReader); err != nil {
+			return nil, err
+		}
+	} else {
+		if req, err = http.NewRequestWithContext(s.Context, s.Method, s.Url, contentReader); err != nil {
+			return nil, err
+		}
 	}
 	for k, vals := range s.Header {
 		for _, v := range vals {

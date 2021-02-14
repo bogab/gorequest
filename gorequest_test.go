@@ -2,6 +2,7 @@ package gorequest
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -2583,5 +2584,26 @@ func TestSetDebugByEnvironmentVar(t *testing.T) {
 
 	if len(buf.String()) > 0 {
 		t.Fatalf("\nExpected gorequest not to log request and response object if GOREQUEST_DEBUG is not set.")
+	}
+}
+
+func TestContext(t *testing.T) {
+	// requesting a delayed response which blocks this request for some time
+	endpoint := "http://httpbin.org/delay/5"
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ch := make(chan []error)
+	go func() {
+		_, _, errs := New().SetContext(ctx).Get(endpoint).End()
+		ch <- errs
+	}()
+
+	// 2 seconds later the request is canceled
+	time.Sleep(2 * time.Second)
+	cancel()
+
+	errs := <-ch
+	if len(errs) == 0 || !strings.HasSuffix(errs[0].Error(), "context canceled") {
+		t.Fatalf("\nExpected context cancelation error, but got: %v", errs)
 	}
 }
